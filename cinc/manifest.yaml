@@ -1,0 +1,15 @@
+manifestVersion: 1
+name: "@whitemars/cinc"
+version: "2026.07.10.1"
+repository: "https://github.com/whitemars/swamp-extensions"
+description: "Read-only Chef/CINC server administration via knife: node health status, node detail, search, package inventory, and group/ACL inspection."
+models:
+  - cinc/cinc.ts
+additionalFiles:
+  - README.md
+  - LICENSE.md
+labels:
+  - chef
+  - cinc
+  - infrastructure
+  - configuration-management
