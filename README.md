@@ -38,7 +38,7 @@ swamp model create @whitemars/cinc cinc \
 swamp model method run cinc status
 
 # knife node show — detail for one node
-swamp model method run cinc show --input nodeName=web01.example.org
+swamp model method run cinc show --input nodeName=web01
 
 # knife search — query any index (default: node)
 swamp model method run cinc search --input query='policy_group:union'
