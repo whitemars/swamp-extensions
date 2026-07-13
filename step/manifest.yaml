@@ -1,0 +1,18 @@
+manifestVersion: 1
+name: "@whitemars/step"
+version: "2026.07.13.2"
+repository: "https://github.com/whitemars/swamp-extensions"
+description: "Manage the X.509 certificate lifecycle (issue, renew, revoke, inspect) against a Smallstep step-ca certificate authority over the network — CA-agnostic, works with any reachable local or remote step-ca via its root fingerprint. Secondarily includes an optional model to stand up and tear down a local step-ca instance in Docker for development."
+models:
+  - step/ca.ts
+  - step/cert.ts
+additionalFiles:
+  - README.md
+  - LICENSE.md
+labels:
+  - certificate-lifecycle
+  - pki
+  - step-ca
+  - smallstep
+  - x509
+  - docker
