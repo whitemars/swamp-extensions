@@ -129,8 +129,10 @@ const AclInfoSchema = z.object({
   }),
 });
 
+/** Global arguments for the CINC model: staleness thresholds and knife configuration. */
 export type GlobalArgs = z.infer<typeof GlobalArgsSchema>;
 
+/** Execution context passed to each method: global args, logger, and resource writer. */
 export interface MethodContext {
   globalArgs: GlobalArgs;
   logger: {
@@ -234,6 +236,10 @@ function classifyHealth(
   return "critical";
 }
 
+/**
+ * CINC/Chef node model. Wraps `knife` to report node health, inspect nodes,
+ * run searches, check package installations, and read groups and ACLs.
+ */
 export const model = {
   type: "@whitemars/cinc",
   version: "2026.07.10.1",

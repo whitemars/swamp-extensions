@@ -348,7 +348,7 @@ function passwordEnv(g: GlobalArgs): Record<string, string> {
  */
 export const model = {
   type: "@whitemars/step/ca",
-  version: "2026.07.13.1",
+  version: "2026.07.13.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     "ca": {

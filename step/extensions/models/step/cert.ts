@@ -291,7 +291,7 @@ const SubjectArgs = z.object({
  */
 export const model = {
   type: "@whitemars/step/cert",
-  version: "2026.07.13.1",
+  version: "2026.07.13.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     "cert": {
