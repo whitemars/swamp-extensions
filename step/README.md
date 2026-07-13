@@ -81,7 +81,7 @@ plaintext.
 
 ```bash
 swamp model method run certs issue  --input subject=web.example.com --input notAfter=24h
-swamp model method run certs issue  --input subject=api.example.com --input 'sans:json=["api.example.com","api.internal"]'
+swamp model method run certs issue  --input subject=api.example.com --input 'sans:json=["api.example.com","api-alt.example.com"]'
 swamp data get certs cert-web.example.com --json     # stored cert (key is a vault ref)
 
 swamp model method run certs renew   --input subject=web.example.com
