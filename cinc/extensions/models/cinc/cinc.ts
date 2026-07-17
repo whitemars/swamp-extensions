@@ -132,6 +132,9 @@ const AclInfoSchema = z.object({
 /** Global arguments for the CINC model: staleness thresholds and knife configuration. */
 export type GlobalArgs = z.infer<typeof GlobalArgsSchema>;
 
+/** A single node's classified health record, as produced by fetchNodeHealth. */
+type NodeHealth = z.infer<typeof NodeHealthSchema>;
+
 /** Execution context passed to each method: global args, logger, and resource writer. */
 export interface MethodContext {
   globalArgs: GlobalArgs;
@@ -237,13 +240,95 @@ function classifyHealth(
 }
 
 /**
+ * Fetches health for every node in a SINGLE `knife search node "*:*"` call.
+ *
+ * `knife status` is itself a search over the node index whose "last check-in"
+ * is the node's `ohai_time` automatic attribute, so requesting `ohai_time`
+ * here returns the identical value. Pulling the platform and policy attributes
+ * in the same query means the whole fleet's health comes back in ONE server
+ * round-trip, replacing the previous two calls (`knife status` plus a separate
+ * policy `knife search`). With `-a`, knife returns rows keyed by node name,
+ * each holding only the requested attributes — so every display field must be
+ * requested explicitly.
+ */
+async function fetchNodeHealth(globalArgs: GlobalArgs): Promise<NodeHealth[]> {
+  const now = Math.floor(Date.now() / 1000);
+  const staleThreshold = now - (globalArgs.staleHours ?? 24) * 3600;
+  const criticalThreshold = now - (globalArgs.criticalHours ?? 168) * 3600;
+
+  const stdout = await runKnife(
+    globalArgs,
+    [
+      "search",
+      "node",
+      "*:*",
+      "-a",
+      "ohai_time",
+      "-a",
+      "chef_environment",
+      "-a",
+      "ipaddress",
+      "-a",
+      "platform",
+      "-a",
+      "platform_version",
+      "-a",
+      "policy_name",
+      "-a",
+      "policy_group",
+      "-F",
+      "json",
+    ],
+    "knife search",
+  );
+  const data = JSON.parse(stdout);
+
+  const health: NodeHealth[] = [];
+  for (const row of data.rows ?? []) {
+    for (
+      const [name, attrs] of Object.entries(row as Record<string, unknown>)
+    ) {
+      const a = (attrs ?? {}) as Record<string, unknown>;
+      const ohaiTime = (a.ohai_time as number | null | undefined) ?? null;
+      health.push({
+        name,
+        environment: a.chef_environment as string | undefined,
+        ip: a.ipaddress as string | undefined,
+        platform: a.platform as string | undefined,
+        platformVersion: a.platform_version as string | undefined,
+        ohaiTime,
+        healthStatus: classifyHealth(
+          ohaiTime,
+          staleThreshold,
+          criticalThreshold,
+        ),
+        lastCheckin: ohaiTime != null
+          ? new Date(ohaiTime * 1000).toISOString()
+          : null,
+        policyName: a.policy_name as string | null | undefined,
+        policyGroup: a.policy_group as string | null | undefined,
+      });
+    }
+  }
+  return health;
+}
+
+/**
  * CINC/Chef node model. Wraps `knife` to report node health, inspect nodes,
  * run searches, check package installations, and read groups and ACLs.
  */
 export const model = {
   type: "@whitemars/cinc",
-  version: "2026.07.10.1",
+  version: "2026.07.17.1",
   globalArguments: GlobalArgsSchema,
+  upgrades: [
+    {
+      toVersion: "2026.07.17.1",
+      description:
+        "status/filter now fetch node health in a single knife search; no globalArguments change",
+      upgradeAttributes: (old: Record<string, unknown>) => old,
+    },
+  ],
   resources: {
     "nodeHealth": {
       description: "Chef/CINC node health report",
@@ -285,103 +370,21 @@ export const model = {
   methods: {
     status: {
       description:
-        "Query the Chef/CINC server via `knife status` and return node health",
+        "Query the Chef/CINC server and return health for every node in a single knife search",
       arguments: z.object({}),
       execute: async (_args: Record<string, never>, context: MethodContext) => {
-        context.logger.info("Querying knife status for node health");
-        const now = Math.floor(Date.now() / 1000);
-        const staleThreshold = now -
-          (context.globalArgs.staleHours ?? 24) * 3600;
-        const criticalThreshold = now -
-          (context.globalArgs.criticalHours ?? 168) * 3600;
-
-        const stdout = await runKnife(context.globalArgs, [
-          "status",
-          "-F",
-          "json",
-        ], "knife status");
-        const nodes = JSON.parse(stdout) as Array<Record<string, unknown>>;
-
-        const policyMap = new Map<
-          string,
-          { policyName?: string; policyGroup?: string }
-        >();
-        try {
-          const policyOut = await runKnife(
-            context.globalArgs,
-            [
-              "search",
-              "node",
-              "*:*",
-              "-a",
-              "policy_name",
-              "-a",
-              "policy_group",
-              "-F",
-              "json",
-            ],
-            "knife search",
-          );
-          const policyData = JSON.parse(policyOut);
-          for (const row of policyData.rows ?? []) {
-            for (
-              const [nodeName, attrs] of Object.entries(
-                row as Record<string, unknown>,
-              )
-            ) {
-              const a = attrs as Record<string, unknown>;
-              policyMap.set(nodeName, {
-                policyName: a.policy_name as string | undefined,
-                policyGroup: a.policy_group as string | undefined,
-              });
-            }
-          }
-        } catch (_e) {
-          // policy enrichment is best-effort; node health still returns
-        }
-
-        const nodeHealth = nodes.map((n: Record<string, unknown>) => {
-          const ohaiTime = n.ohai_time as number | null | undefined;
-          const healthStatus = classifyHealth(
-            ohaiTime,
-            staleThreshold,
-            criticalThreshold,
-          );
-          const policy = policyMap.get(n.name as string);
-          return {
-            name: n.name,
-            environment: n.chef_environment,
-            ip: n.ip,
-            platform: n.platform,
-            platformVersion: n.platform_version,
-            ohaiTime,
-            healthStatus,
-            lastCheckin: ohaiTime != null
-              ? new Date(ohaiTime * 1000).toISOString()
-              : null,
-            policyName: policy?.policyName,
-            policyGroup: policy?.policyGroup,
-          };
-        });
+        context.logger.info("Querying node health via knife search");
+        const nodeHealth = await fetchNodeHealth(context.globalArgs);
 
         const summary = {
           total: nodeHealth.length,
-          ok:
-            nodeHealth.filter((n: { healthStatus: string }) =>
-              n.healthStatus === "ok"
-            ).length,
-          stale:
-            nodeHealth.filter((n: { healthStatus: string }) =>
-              n.healthStatus === "stale"
-            ).length,
+          ok: nodeHealth.filter((n) => n.healthStatus === "ok").length,
+          stale: nodeHealth.filter((n) => n.healthStatus === "stale").length,
           critical:
-            nodeHealth.filter((n: { healthStatus: string }) =>
-              n.healthStatus === "critical"
-            ).length,
+            nodeHealth.filter((n) => n.healthStatus === "critical").length,
           neverConverged:
-            nodeHealth.filter((n: { healthStatus: string }) =>
-              n.healthStatus === "never_converged"
-            ).length,
+            nodeHealth.filter((n) => n.healthStatus === "never_converged")
+              .length,
         };
 
         const output = {
@@ -707,43 +710,8 @@ export const model = {
         context.logger.info("Filtering nodes by status {status}", {
           status: args.status,
         });
-        const stdout = await runKnife(context.globalArgs, [
-          "status",
-          "-F",
-          "json",
-        ], "knife status");
-        const nodes = JSON.parse(stdout) as Array<Record<string, unknown>>;
-
-        const now = Math.floor(Date.now() / 1000);
-        const staleThreshold = now -
-          (context.globalArgs.staleHours ?? 24) * 3600;
-        const criticalThreshold = now -
-          (context.globalArgs.criticalHours ?? 168) * 3600;
-
-        const mapped = nodes.map((n: Record<string, unknown>) => {
-          const ohaiTime = n.ohai_time as number | null | undefined;
-          const healthStatus = classifyHealth(
-            ohaiTime,
-            staleThreshold,
-            criticalThreshold,
-          );
-          return {
-            name: n.name,
-            environment: n.chef_environment,
-            ip: n.ip,
-            platform: n.platform,
-            platformVersion: n.platform_version,
-            ohaiTime,
-            healthStatus,
-            lastCheckin: ohaiTime != null
-              ? new Date(ohaiTime * 1000).toISOString()
-              : null,
-          };
-        });
-
-        const filtered = mapped.filter((n: { healthStatus: string }) =>
-          n.healthStatus === args.status
-        );
+        const mapped = await fetchNodeHealth(context.globalArgs);
+        const filtered = mapped.filter((n) => n.healthStatus === args.status);
 
         const output = {
           nodes: filtered,

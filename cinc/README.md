@@ -47,7 +47,7 @@ swamp model create @whitemars/cinc cinc \
 ## Usage
 
 ```bash
-# knife status — health of every node (ok / stale / critical / never_converged)
+# health of every node (ok / stale / critical / never_converged) in one server call
 swamp model method run cinc status
 swamp data get cinc current --json          # inspect the report
 
@@ -78,12 +78,12 @@ swamp model method run cinc checkPackage --input packageName=openssl --input gro
 
 | Method         | knife command                              | Output resource |
 | -------------- | ------------------------------------------ | --------------- |
-| `status`       | `knife status` (+ policy enrichment)       | `nodeHealth`    |
+| `status`       | `knife search node "*:*" -a …` (one call)  | `nodeHealth`    |
 | `show`         | `knife node show`                          | `nodeDetail`    |
 | `search`       | `knife search <index> <query>`             | `searchResult`  |
 | `group`        | `knife group list` / `knife group show`    | `groupInfo`     |
 | `acl`          | `knife acl show`                           | `aclInfo`       |
-| `filter`       | `knife status`, filtered by health         | `nodeHealth`    |
+| `filter`       | `knife search node "*:*"`, filtered        | `nodeHealth`    |
 | `checkPackage` | `knife search node packages:…`             | `packageCheck`  |
 
 All methods are **read-only** — the model never mutates server state.
