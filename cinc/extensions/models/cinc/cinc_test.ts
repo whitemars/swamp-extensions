@@ -13,37 +13,39 @@ function ctx(context: unknown): MethodContext {
   return context as MethodContext;
 }
 
-const STATUS_ROW = {
-  name: "web01.example.org",
-  chef_environment: "production",
-  ip: "203.0.113.10",
-  platform: "ubuntu",
-  platform_version: "22.04",
-  ohai_time: Math.floor(Date.now() / 1000) - 3600, // 1h ago: within staleHours
+// `status` and `filter` fetch the fleet with a single `knife search -a …`,
+// which returns rows keyed by node name holding only the requested attributes.
+const OK_NODE_ROW = {
+  "web01.example.org": {
+    ohai_time: Math.floor(Date.now() / 1000) - 3600, // 1h ago: within staleHours
+    chef_environment: "production",
+    ipaddress: "203.0.113.10",
+    platform: "ubuntu",
+    platform_version: "22.04",
+    policy_name: "base",
+    policy_group: "production",
+  },
 };
 
 const NEVER_CONVERGED_ROW = {
-  name: "web02.example.org",
-  chef_environment: "production",
-  ip: "203.0.113.11",
-  platform: "ubuntu",
-  platform_version: "22.04",
-  ohai_time: null,
+  "web02.example.org": {
+    ohai_time: null,
+    chef_environment: "production",
+    ipaddress: "203.0.113.11",
+    platform: "ubuntu",
+    platform_version: "22.04",
+    policy_name: null,
+    policy_group: null,
+  },
 };
 
-Deno.test("status classifies nodes and enriches with policy info", async () => {
+Deno.test("status fetches all nodes in one knife search and classifies them", async () => {
+  let searchCalls = 0;
   await withMockedCommand((cmd, args) => {
-    if (args.includes("status")) {
-      return { stdout: JSON.stringify([STATUS_ROW, NEVER_CONVERGED_ROW]), code: 0 };
-    }
     if (args.includes("search")) {
+      searchCalls++;
       return {
-        stdout: JSON.stringify({
-          rows: [
-            { "web01.example.org": { policy_name: "base", policy_group: "production" } },
-            { "web02.example.org": { policy_name: null, policy_group: null } },
-          ],
-        }),
+        stdout: JSON.stringify({ rows: [OK_NODE_ROW, NEVER_CONVERGED_ROW] }),
         code: 0,
       };
     }
@@ -55,6 +57,10 @@ Deno.test("status classifies nodes and enriches with policy info", async () => {
 
     await model.methods.status.execute({}, ctx(context));
 
+    // The whole fleet's health — including policy fields — comes from a
+    // SINGLE server round-trip. This is the crux of the optimization.
+    assertEquals(searchCalls, 1);
+
     const written = getWrittenResources();
     assertEquals(written.length, 1);
     assertEquals(written[0].specName, "nodeHealth");
@@ -64,11 +70,12 @@ Deno.test("status classifies nodes and enriches with policy info", async () => {
     const web02 = nodes.find((n) => n.name === "web02.example.org")!;
 
     assertEquals(web01.healthStatus, "ok");
+    assertEquals(web01.ip, "203.0.113.10"); // mapped from the ipaddress attribute
     assertEquals(web01.policyName, "base");
     assertEquals(web01.policyGroup, "production");
 
-    // Never-converged node: policy search returned explicit nulls, not
-    // undefined — the schema must accept null, not just optional-absent.
+    // Never-converged node: search returned explicit nulls, not undefined —
+    // the schema must accept null, not just optional-absent.
     assertEquals(web02.healthStatus, "never_converged");
     assertEquals(web02.policyName, null);
     assertEquals(web02.policyGroup, null);
@@ -83,29 +90,14 @@ Deno.test("status classifies nodes and enriches with policy info", async () => {
   });
 });
 
-Deno.test("status still succeeds when policy enrichment search fails", async () => {
+Deno.test("status throws before writing when the node search fails", async () => {
   await withMockedCommand((_cmd, args) => {
-    if (args.includes("status")) {
-      return { stdout: JSON.stringify([STATUS_ROW]), code: 0 };
+    // Fail the fleet search; let the knife `--version` probe succeed so
+    // resolveKnife settles without masking the search failure.
+    if (args.includes("search")) {
+      return { stdout: "", stderr: "ERROR: Connection refused", code: 1 };
     }
-    // Simulate a server without the search index available.
-    return { stdout: "", stderr: "search index unavailable", code: 1 };
-  }, async () => {
-    const { context, getWrittenResources } = createModelTestContext({
-      globalArgs: { staleHours: 24, criticalHours: 168 },
-    });
-
-    await model.methods.status.execute({}, ctx(context));
-
-    const nodes = getWrittenResources()[0].data.nodes as Array<Record<string, unknown>>;
-    assertEquals(nodes[0].policyName, undefined);
-    assertEquals(nodes[0].policyGroup, undefined);
-  });
-});
-
-Deno.test("status throws before writing when knife status fails", async () => {
-  await withMockedCommand(() => {
-    return { stdout: "", stderr: "ERROR: Connection refused", code: 1 };
+    return { stdout: "", code: 0 };
   }, async () => {
     const { context, getWrittenResources } = createModelTestContext({
       globalArgs: { staleHours: 24, criticalHours: 168 },
@@ -114,7 +106,7 @@ Deno.test("status throws before writing when knife status fails", async () => {
     await assertRejects(
       () => model.methods.status.execute({}, ctx(context)),
       Error,
-      "knife status failed",
+      "knife search failed",
     );
     assertEquals(getWrittenResources().length, 0);
   });
@@ -211,8 +203,11 @@ Deno.test("checkPackage separates current from outdated versions against minVers
 
 Deno.test("filter reports the matching status in summary, not zeros", async () => {
   await withMockedCommand((_cmd, args) => {
-    if (args.includes("status")) {
-      return { stdout: JSON.stringify([STATUS_ROW, NEVER_CONVERGED_ROW]), code: 0 };
+    if (args.includes("search")) {
+      return {
+        stdout: JSON.stringify({ rows: [OK_NODE_ROW, NEVER_CONVERGED_ROW] }),
+        code: 0,
+      };
     }
     return { stdout: "", stderr: "unexpected call", code: 1 };
   }, async () => {
