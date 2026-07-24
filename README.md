@@ -9,6 +9,7 @@ Extensions for [swamp](https://github.com/swamp-club/swamp) providing model inte
 | [`@whitemars/cinc`](cinc/) | Read-only Chef/CINC administration via the `knife` CLI — node check-in status, node detail, search, package inventory, and (via knife-acl) group/ACL inspection | None (shells out to `knife`/`cinc-knife`) |
 | [`@whitemars/step`](step/) | X.509 certificate lifecycle against a [Smallstep](https://smallstep.com) step-ca — `step/cert` issues, renews, revokes, and inspects certificates from any reachable CA (local or remote); `step/ca` optionally stands up a local step-ca in Docker for development | Docker (runs the `smallstep/step-cli`/`step-ca` containers) |
 | [`@whitemars/incus`](incus/) | Container and VM lifecycle for an [Incus](https://linuxcontainers.org/incus/) daemon via the local `incus` CLI — launch, start, stop, restart, and delete instances, plus a `sync` factory that inventories every instance in a remote/project | None (shells out to `incus`) |
+| [`@whitemars/colima`](colima/) | Lifecycle for a [Colima](https://github.com/abiosoft/colima) VM (macOS container runtime) via the local `colima` CLI — start/provision, stop, restart, delete, sync VM status, and exec commands inside the VM; one instance per Colima profile | None (shells out to `colima`) |
 
 ## Installation
 
@@ -21,6 +22,7 @@ manually with:
 swamp extension pull @whitemars/cinc
 swamp extension pull @whitemars/step
 swamp extension pull @whitemars/incus
+swamp extension pull @whitemars/colima
 ```
 
 ## Usage
@@ -115,6 +117,36 @@ swamp model method run incus delete  --input name=web01 --input force=true
 ```
 
 See the [`@whitemars/incus` README](incus/) for the full method reference,
+configuration arguments, and the resource schemas.
+
+### Colima VM lifecycle
+
+```bash
+swamp extension pull @whitemars/colima
+
+# Direct execution against the default profile (no persisted definition needed)
+swamp model @whitemars/colima method run sync colima
+
+# Or create a managed instance pinned to a profile and provisioning size
+swamp model create @whitemars/colima colima \
+  --global-arg profile=default \
+  --global-arg cpus=4 \
+  --global-arg memory=8
+
+# start / provision, then read the persisted status
+swamp model method run colima start
+swamp data get colima status --json
+
+# lifecycle — stop / restart / delete (delete is destructive, always -f)
+swamp model method run colima stop
+swamp model method run colima restart
+swamp model method run colima delete
+
+# exec — run a command inside the VM (stdout/stderr/exit code captured)
+swamp model method run colima exec --input command='docker ps'
+```
+
+See the [`@whitemars/colima` README](colima/) for the full method reference,
 configuration arguments, and the resource schemas.
 
 ## Development
