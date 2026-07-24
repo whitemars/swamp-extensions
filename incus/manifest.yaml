@@ -1,0 +1,17 @@
+manifestVersion: 1
+name: "@whitemars/incus"
+version: "2026.07.23.1"
+repository: "https://github.com/whitemars/swamp-extensions"
+description: "Container and VM lifecycle for an Incus daemon via the local incus CLI: launch, start, stop, restart, and delete instances, and sync a full inventory. Targets the local daemon or any configured remote, scoped to an Incus project."
+models:
+  - incus/incus.ts
+additionalFiles:
+  - README.md
+  - LICENSE.md
+labels:
+  - incus
+  - lxc
+  - containers
+  - virtualization
+  - infrastructure
+  - lifecycle
