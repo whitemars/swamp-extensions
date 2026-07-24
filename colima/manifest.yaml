@@ -1,0 +1,18 @@
+manifestVersion: 1
+name: "@whitemars/colima"
+version: "2026.07.24.1"
+repository: "https://github.com/whitemars/swamp-extensions"
+description: "Lifecycle management for a Colima VM (macOS container runtime, https://github.com/abiosoft/colima) via the local colima CLI: start and provision, stop, restart, delete, sync VM status, and exec commands inside the VM. One model instance targets one Colima profile."
+models:
+  - colima/colima.ts
+additionalFiles:
+  - README.md
+  - LICENSE.md
+labels:
+  - colima
+  - docker
+  - containers
+  - virtualization
+  - macos
+  - vm
+  - lifecycle
