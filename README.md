@@ -8,6 +8,7 @@ Extensions for [swamp](https://github.com/swamp-club/swamp) providing model inte
 |-----------|-------------|--------------|
 | [`@whitemars/cinc`](cinc/) | Read-only Chef/CINC administration via the `knife` CLI — node check-in status, node detail, search, package inventory, and (via knife-acl) group/ACL inspection | None (shells out to `knife`/`cinc-knife`) |
 | [`@whitemars/step`](step/) | X.509 certificate lifecycle against a [Smallstep](https://smallstep.com) step-ca — `step/cert` issues, renews, revokes, and inspects certificates from any reachable CA (local or remote); `step/ca` optionally stands up a local step-ca in Docker for development | Docker (runs the `smallstep/step-cli`/`step-ca` containers) |
+| [`@whitemars/incus`](incus/) | Container and VM lifecycle for an [Incus](https://linuxcontainers.org/incus/) daemon via the local `incus` CLI — launch, start, stop, restart, and delete instances, plus a `sync` factory that inventories every instance in a remote/project | None (shells out to `incus`) |
 
 ## Installation
 
@@ -19,6 +20,7 @@ manually with:
 # Model extensions
 swamp extension pull @whitemars/cinc
 swamp extension pull @whitemars/step
+swamp extension pull @whitemars/incus
 ```
 
 ## Usage
@@ -83,6 +85,37 @@ swamp model method run step-ca up
 See the [`@whitemars/step` README](step/) for the full method reference,
 configuration arguments, and how to wire the local CA's fingerprint into the
 cert client via CEL.
+
+### Incus container/VM lifecycle
+
+```bash
+swamp extension pull @whitemars/incus
+
+# Direct execution against the local daemon (no persisted definition needed)
+swamp model @whitemars/incus method run sync incus
+
+# Or create a managed instance pinned to a remote/project
+swamp model create @whitemars/incus incus \
+  --global-arg remote=prod \
+  --global-arg project=web
+
+# sync — inventory every instance (one `container` resource each + a `summary`)
+swamp model method run incus sync
+swamp data get incus summary --json
+
+# launch — create and start an instance from an image
+swamp model method run incus launch --input name=web01 --input image=images:debian/12
+
+# lifecycle — start / stop / restart / delete (delete refuses a running instance
+# unless force=true)
+swamp model method run incus start   --input name=web01
+swamp model method run incus stop    --input name=web01
+swamp model method run incus restart --input name=web01
+swamp model method run incus delete  --input name=web01 --input force=true
+```
+
+See the [`@whitemars/incus` README](incus/) for the full method reference,
+configuration arguments, and the resource schemas.
 
 ## Development
 
